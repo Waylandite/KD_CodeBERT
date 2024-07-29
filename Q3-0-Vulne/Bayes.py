@@ -57,11 +57,11 @@ def sample_params(args,space):
             print(sampled_params)
             hyperparameters.append(sampled_params)
     # 蒸馏过程
-    accs, f1s, pres, recs = distill(args, hyperparameters, eval=False, surrogate=False)
-    # accs = [round(random.uniform(0.5, 0.6), 2) for _ in range(20)]
-    # f1s = [round(random.uniform(0.5, 0.6), 2) for _ in range(20)]
-    # pres = [round(random.uniform(0.5, 0.6), 2) for _ in range(20)]
-    # recs = [round(random.uniform(0.5, 0.6), 2) for _ in range(20)]
+    # accs, f1s, pres, recs = distill(args, hyperparameters, eval=False, surrogate=False)
+    accs = [round(random.uniform(0.5, 0.6), 2) for _ in range(20)]
+    f1s = [round(random.uniform(0.5, 0.6), 2) for _ in range(20)]
+    pres = [round(random.uniform(0.5, 0.6), 2) for _ in range(20)]
+    recs = [round(random.uniform(0.5, 0.6), 2) for _ in range(20)]
 
     with open("sample_params_data.csv", "w") as f:
         writer = csv.writer(f)
@@ -74,6 +74,10 @@ def sample_params(args,space):
 # 目标参数
 def objective(hyperparameters):
     '''Returns validation score from hyperparameters'''
+    # 判断参数是否符合规则
+    # 判断参数是否符合规则
+    if not check_params(hyperparameters):
+        return {'loss': 1, 'status': 'fail', 'params': hyperparameters}
     start_time = time.time()
 
     accs = surrogate_model_acc.predict([Hyperparameters_convert(hyperparameters)])[0]
