@@ -75,7 +75,6 @@ def sample_params(args,space):
 def objective(hyperparameters):
     '''Returns validation score from hyperparameters'''
     # 判断参数是否符合规则
-    # 判断参数是否符合规则
     if not check_params(hyperparameters):
         return {'loss': 1, 'status': 'fail', 'params': hyperparameters}
     start_time = time.time()
