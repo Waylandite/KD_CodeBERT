@@ -38,22 +38,25 @@ def mapFunction_convert(mapFunction):
         mapFunction[5],
     ]
 
+
+
 def Hyperparameters_convert(hyperparameters):
     return [
         hyperparameters['learning_rate'],
-        hyperparameters['hid_epoch'],
+        hyperparameters['hid_epoches'],
+        hyperparameters['loss_function'],
         hyperparameters['hidden_layers'],
-        hyperparameters['mapfunction_1'],
-        hyperparameters['mapfunction_2'],
-        hyperparameters['mapfunction_3'],
-        hyperparameters['mapfunction_4'],
-        hyperparameters['mapfunction_5'],
-        hyperparameters['mapfunction_6'],
-        hyperparameters['mapfunction_7'],
-        hyperparameters['mapfunction_8'],
-        hyperparameters['mapfunction_9'],
-        hyperparameters['mapfunction_10'],
-        hyperparameters['mapfunction_11'],
+        int(hyperparameters['mapfunction_1']),
+        int(hyperparameters['mapfunction_2']),
+        int(hyperparameters['mapfunction_3']),
+        int(hyperparameters['mapfunction_4']),
+        int(hyperparameters['mapfunction_5']),
+        int(hyperparameters['mapfunction_6']),
+        int(hyperparameters['mapfunction_7']),
+        int(hyperparameters['mapfunction_8']),
+        int(hyperparameters['mapfunction_9']),
+        int(hyperparameters['mapfunction_10']),
+        int(hyperparameters['mapfunction_11']),
         int(hyperparameters['mapfunction_12']),
     ]
 

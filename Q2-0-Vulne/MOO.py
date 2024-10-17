@@ -358,7 +358,8 @@ if __name__ == "__main__":
     # for each_pop in pop:
     #     map_functionList.append(each_pop.get_candidate_values())
 
-    map_functionList=[[2,4,6,8,10,12]]
+    # map_functionList=[[2,4,6,8,10,12]]
+    map_functionList=[[1]]
     logging.info("Current map_functionList: {}".format(map_functionList))
 
     accs,f1s,pres,recs = distill(tokenizer,args,map_functionList, eval=False,surrogate=False)

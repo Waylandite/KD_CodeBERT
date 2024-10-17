@@ -298,7 +298,7 @@ def distill(tokenizer, args, map_functionList, eval=False, surrogate=False):
         if not eval:
             train_dataset = TextDataset(tokenizer, args, file_path=args.train_data_file)
             # 选取一半的训练数据
-            train_dataset = torch.utils.data.Subset(train_dataset, np.random.choice(len(train_dataset), int(len(train_dataset)/2), replace=False))
+            # train_dataset = torch.utils.data.Subset(train_dataset, np.random.choice(len(train_dataset), int(len(train_dataset)/2), replace=False))
 
             train_sampler = RandomSampler(train_dataset)
             # train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size,

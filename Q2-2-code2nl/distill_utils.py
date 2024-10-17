@@ -11,8 +11,8 @@ import torch.nn.functional as F
 from torch.nn import MSELoss
 import torch.nn as nn
 from tqdm import tqdm
-from utils import convert_examples_to_features, distill_loss, TextDataset, load_and_cache_examples, read_examples, set_seed
-from model import Model, StudentSeq2Seq, TeacherSeq2Seq
+from utils import convert_examples_to_features, distill_loss, read_examples, set_seed
+from model import StudentSeq2Seq, TeacherSeq2Seq
 from sklearn.metrics import recall_score, precision_score, f1_score
 from torch.utils.data import DataLoader, SequentialSampler, RandomSampler,TensorDataset
 from transformers import AdamW, get_linear_schedule_with_warmup, RobertaConfig, RobertaModel, \
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 def train(student_model, teacher_model, map_function, train_dataloader, eval_dataloader,bleu_eval_dataloader,bleu_eval_examples, hid_epoches, pred_epoches,
-          hid_learning_rate, pred_learning_rate, temperature, device, loss_function,surrogate=False):
+          hid_learning_rate, pred_learning_rate, temperature, device, loss_function,eval_steps,tokenizer,surrogate=False):
 
     total_params = sum(p.numel() for p in student_model.parameters())
     logger.info(f"{total_params:,} total parameters.")
@@ -57,7 +57,7 @@ def train(student_model, teacher_model, map_function, train_dataloader, eval_dat
 
         return kl_divergence
 
-    tr_loss, tr_att_loss, tr_rep_loss , nb_tr_steps = 0, 0, 0, 0, 0
+    tr_loss, tr_att_loss, tr_rep_loss , nb_tr_steps = 0, 0, 0, 0
 
     bar = tqdm(range(num_train_optimization_steps), total=num_train_optimization_steps)
     train_dataloader = cycle(train_dataloader)
@@ -139,6 +139,7 @@ def train(student_model, teacher_model, map_function, train_dataloader, eval_dat
     optimizer_grouped_parameters = [
         {"params": [p for n, p in student_model.named_parameters() if not any(nd in n for nd in no_decay)]}
     ]
+    num_train_optimization_steps=pred_epoches
     optimizer = AdamW(optimizer_grouped_parameters, lr=pred_learning_rate,eps=1e-8)
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0 * 0.1,
                                                 num_training_steps=num_train_optimization_steps)
@@ -168,7 +169,7 @@ def train(student_model, teacher_model, map_function, train_dataloader, eval_dat
         shift_teacher_logits = teacher_logits[..., :-1, :].contiguous()
         loss_fct = nn.CrossEntropyLoss(ignore_index=-1)
         # soft label
-        encoder_loss=distill_loss(shift_logits,shift_teacher_logits)
+        encoder_loss=distill_loss(shift_logits,shift_teacher_logits,temperature)
         # hard label
         decoder_loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1))[active_loss],
                     shift_labels.view(-1)[active_loss])
@@ -190,8 +191,12 @@ def train(student_model, teacher_model, map_function, train_dataloader, eval_dat
         scheduler.step()
         optimizer.zero_grad()
 
-        if (nb_tr_steps, + 1) % args.eval_steps == 0:
-            dev_results = evaluate(student_model, device, eval_dataloader,bleu_eval_dataloader, bleu_eval_examples)
+        if (nb_tr_steps + 1) % eval_steps == 0:
+            dev_results = evaluate(student_model, device, eval_dataloader,bleu_eval_dataloader, bleu_eval_examples,tokenizer)
+            if dev_results["eval_bleu"] > best_bleu:
+                best_bleu = dev_results["eval_bleu"]
+            if dev_results["eval_ppl"] < best_ppl:
+                best_ppl = dev_results["eval_ppl"]
 
 
 
@@ -200,7 +205,7 @@ def train(student_model, teacher_model, map_function, train_dataloader, eval_dat
     return {"best_bleu": best_bleu, "best_ppl": best_ppl}
 
 
-def evaluate(model, device, eval_dataloader,bleu_eval_dataloader, bleu_eval_examples):
+def evaluate(model, device, eval_dataloader,bleu_eval_dataloader, bleu_eval_examples,tokenizer):
     model.eval()
     eval_loss, tokens_num = 0, 0
     for batch in eval_dataloader:
@@ -235,7 +240,7 @@ def evaluate(model, device, eval_dataloader,bleu_eval_dataloader, bleu_eval_exam
                 p.append(text)
     model.train()
     predictions = []
-    output_dir = "../bleu/"
+    output_dir = "./bleu/"
     with open(os.path.join(output_dir, "dev.output"), 'w') as f, open(
             os.path.join(output_dir, "dev.gold"), 'w') as f1:
         for ref, gold in zip(p, bleu_eval_examples):
@@ -267,10 +272,12 @@ def distill(tokenizer, args, map_functionList, eval=False, surrogate=False):
 
     set_seed(args.seed)
 
-    dev_best_accs = []
-    dev_best_f1s = []
-    dev_best_pres = []
-    dev_best_recs = []
+    # dev_best_accs = []
+    # dev_best_f1s = []
+    # dev_best_pres = []
+    # dev_best_recs = []
+    best_bleus = []
+    best_ppls = []
     # teacher model
     config=RobertaConfig.from_pretrained('/home/wuruifeng/data/models/codebert-base')
     encoder = RobertaModel(config=config)
@@ -295,7 +302,7 @@ def distill(tokenizer, args, map_functionList, eval=False, surrogate=False):
         student_model.to(args.device)
 
         if not eval:
-            train_examples = read_examples(args.train_filename)
+            train_examples = read_examples(args.train_data_file)
             train_features = convert_examples_to_features(train_examples, tokenizer,args,stage='train')
             all_source_ids = torch.tensor([f.source_ids for f in train_features], dtype=torch.long)
             all_source_mask = torch.tensor([f.source_mask for f in train_features], dtype=torch.long)
@@ -323,17 +330,19 @@ def distill(tokenizer, args, map_functionList, eval=False, surrogate=False):
             eval_features = convert_examples_to_features(eval_examples, tokenizer, args, stage='test')
             all_source_ids = torch.tensor([f.source_ids for f in eval_features], dtype=torch.long)
             all_source_mask = torch.tensor([f.source_mask for f in eval_features], dtype=torch.long)
-            bleu_eval_dataloader = TensorDataset(all_source_ids, all_source_mask)
+            eval_data = TensorDataset(all_source_ids, all_source_mask)
             bleu_eval_examples = eval_examples
+            eval_sampler = SequentialSampler(eval_data)
+            bleu_eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=args.eval_batch_size)
 
             dev_best_outcomes = train(student_model, teacher_model, map_function, train_dataloader, eval_dataloader,bleu_eval_dataloader,bleu_eval_examples,
                                  args.hid_epoches,
                                  args.pred_epoches, args.hid_learning_rate, args.pred_learning_rate, args.temperature,
-                                 args.device, args.loss_function,surrogate)
+                                 args.device, args.loss_function,args.eval_steps,tokenizer,surrogate)
            
 
-            dev_best_accs.append(dev_best_outcomes["best_bleu"])
-            dev_best_f1s.append(dev_best_outcomes["best_ppl"])
+            best_bleus.append(dev_best_outcomes["best_bleu"])
+            best_ppls.append(dev_best_outcomes["best_ppl"])
 
 
         else:
@@ -356,7 +365,7 @@ def distill(tokenizer, args, map_functionList, eval=False, surrogate=False):
                                                                                             test_results[
                                                                                                 "inference_time"]))
 
-    return dev_best_accs, dev_best_f1s, dev_best_pres, dev_best_recs
+    return best_bleus,best_ppls
 
 
 

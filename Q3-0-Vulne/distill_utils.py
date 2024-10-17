@@ -90,7 +90,7 @@ def train(student_model, teacher_model, map_function, train_dataloader, eval_dat
                 teacher_att = torch.where(teacher_att <= -1e2, torch.zeros_like(teacher_att).to(device),
                                           teacher_att)
 
-                if loss_function == "kl":
+                if loss_function == 1:  
                     tmp_loss = attention_kl_divergence(student_att, teacher_att)
                 else:
                     tmp_loss = loss_mse(student_att, teacher_att)
@@ -307,7 +307,7 @@ def distill(args, hyperparametersList, eval=False, surrogate=False):
     dev_best_recs = []
 
     for hyperparam in hyperparametersList:
-
+        
         student_config.num_hidden_layers = int(hyperparam['hidden_layers'])
         # 根据学生模型的层数,选择hyperparam中有效的map_function
         mapfunction = []
@@ -318,15 +318,15 @@ def distill(args, hyperparametersList, eval=False, surrogate=False):
 
         student_model = Model(RobertaForSequenceClassification(student_config))
         student_model.to(args.device)
-
+        print(hyperparam)
         dev_best_outcomes = train(student_model, teacher_model, mapfunction, train_dataloader, eval_dataloader,
-                                  int(hyperparam.hid_epoch),
+                                  int(hyperparam["hid_epoches"]),
                                   args.pred_epoches,
-                                  hyperparam.learning_rate,
+                                  hyperparam["learning_rate"],
                                   args.pred_learning_rate,
                                   args.temperature,
                                   args.device,
-                                  args.loss_function,surrogate=False)
+                                  hyperparam["loss_function"],surrogate=False)
 
         dev_best_accs.append(dev_best_outcomes["eval_acc"])
         dev_best_f1s.append(dev_best_outcomes["eval_f1"])

@@ -310,11 +310,20 @@ if __name__ == "__main__":
                         help="Batch size per GPU/CPU for training.")
     parser.add_argument("--eval_batch_size", default=4, type=int,
                         help="Batch size per GPU/CPU for evaluation.")
+    parser.add_argument("--eval_steps", default=1000, type=int,
+                        help="eval_steps per GPU/CPU for evaluation.")
+    parser.add_argument("--beam_size", default=10, type=int,
+                        help="eval_steps per GPU/CPU for evaluation.")
     parser.add_argument("--block_size", default=-1, type=int,
                         help="Optional input sequence length after tokenization."
                              "The training dataset will be truncated in block of this size for training."
                              "Default to the model max input length for single sentence inputs (take into account special tokens).")
-
+    parser.add_argument("--max_source_length", default=64, type=int,
+                        help="The maximum total source sequence length after tokenization. Sequences longer "
+                             "than this will be truncated, sequences shorter will be padded.")
+    parser.add_argument("--max_target_length", default=32, type=int,
+                        help="The maximum total target sequence length after tokenization. Sequences longer "
+                             "than this will be truncated, sequences shorter will be padded.")
     parser.add_argument("--hid_epoches", type=int, default=42,
                         help="epoch num for hid training")
     parser.add_argument("--pred_epoches", type=int, default=42,

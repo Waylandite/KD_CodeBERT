@@ -2,7 +2,7 @@ import argparse
 import json
 import random
 import time
-
+import pandas as pd
 import numpy as np
 import torch
 from hyperopt import hp, space_eval
@@ -30,6 +30,9 @@ def check_params(sampled_params):
             mapfunction.append(int(sampled_params[key]))
     # 排除所有为0的数据
     mapfunction = [x for x in mapfunction if x != 0]
+    # 如果全为0 则判断为失败
+    if not mapfunction:  # 如果mapfunction为空
+        return False
 
     # 检查 mapfunction 是否严格递增
     if all(mapfunction[i] < mapfunction[i + 1] for i in range(len(mapfunction) - 1)):
@@ -57,15 +60,15 @@ def sample_params(args,space):
             print(sampled_params)
             hyperparameters.append(sampled_params)
     # 蒸馏过程
-    # accs, f1s, pres, recs = distill(args, hyperparameters, eval=False, surrogate=False)
-    accs = [round(random.uniform(0.5, 0.6), 2) for _ in range(20)]
-    f1s = [round(random.uniform(0.5, 0.6), 2) for _ in range(20)]
-    pres = [round(random.uniform(0.5, 0.6), 2) for _ in range(20)]
-    recs = [round(random.uniform(0.5, 0.6), 2) for _ in range(20)]
+    accs, f1s, pres, recs = distill(args, hyperparameters, eval=False, surrogate=False)
+    # accs = [round(random.uniform(0.5, 0.6), 2) for _ in range(20)]
+    # f1s = [round(random.uniform(0.5, 0.6), 2) for _ in range(20)]
+    # pres = [round(random.uniform(0.5, 0.6), 2) for _ in range(20)]
+    # recs = [round(random.uniform(0.5, 0.6), 2) for _ in range(20)]
 
     with open("sample_params_data.csv", "w") as f:
         writer = csv.writer(f)
-        writer.writerow(["learning_rate","hid_epoch","hidden_layers",'mapfunction_1','mapfunction_2','mapfunction_3','mapfunction_4','mapfunction_5','mapfunction_6','mapfunction_7','mapfunction_8','mapfunction_9''mapfunction_10','mapfunction_11','mapfunction_12',"Accuracy", "F1", "Precision", "Recall"])
+        writer.writerow(["learning_rate","hid_epoches","loss_function","hidden_layers",'mapfunction_1','mapfunction_2','mapfunction_3','mapfunction_4','mapfunction_5','mapfunction_6','mapfunction_7','mapfunction_8','mapfunction_9','mapfunction_10','mapfunction_11','mapfunction_12',"Accuracy", "F1", "Precision", "Recall"])
         for d, acc,f1,pre,rec in zip(hyperparameters, accs, f1s, pres, recs):
             writer.writerow(Hyperparameters_convert(d) + [acc] + [f1] + [pre] + [rec])
     return hyperparameters,accs
@@ -150,14 +153,17 @@ if __name__ == "__main__":
 
 
     # Define the search space
-    # parm1 learning_rate 学习率
-    # parm2 hid_epoch 隐藏层蒸馏迭代次数
+    # parm1 learning_rate 中间层蒸馏阶段学习率
+    # parm2 hid_epoches 隐藏层蒸馏迭代次数
+    # loss_function  蒸馏损失函数  1代表kl   2代表mse(bayes优化器很难编码字符串，所以这里用数字代替)
     # parm3 hidden_layers 隐藏层堆叠数
     # parm-else mapfunction_1-12 映射函数  0 means no learning
     space = {
         'learning_rate': hp.loguniform('learning_rate', np.log(0.00005), np.log(0.001)),
-        'hid_epoch': hp.quniform('hid_epoch', 8, 20, 1),
-        'hidden_layers': hp.quniform('hidden_layers', 1, 12, 1),
+        'hid_epoches': hp.quniform('hid_epoches', 4, 13, 1),
+        'loss_function': hp.choice('loss_function',[1, 2]),
+        # 'hidden_layers': hp.choice('hidden_layers',[6]),
+        'hidden_layers': hp.quniform('hidden_layers', 1, 6, 1),
         'mapfunction_1': hp.choice('mapfunction_1', [0, hp.quniform('mapfunction_1_opt', 1, 12, 1)]),
         'mapfunction_2': hp.choice('mapfunction_2', [0, hp.quniform('mapfunction_2_opt', 1, 12, 1)]),
         'mapfunction_3': hp.choice('mapfunction_3', [0, hp.quniform('mapfunction_3_opt', 1, 12, 1)]),
@@ -172,10 +178,23 @@ if __name__ == "__main__":
         'mapfunction_12': hp.choice('mapfunction_12', [0, hp.quniform('mapfunction_12_opt', 1, 12, 1)]),
     }
 
-    params,accs=sample_params(args,space)
-    params=[Hyperparameters_convert(p) for p in params]
-    surrogate_model_acc = predictor([params, accs])
 
+    # params,accs=sample_params(args,space)
+    # params=[Hyperparameters_convert(p) for p in params]
+    # if exist params and accs, then use them to train surrogate model
+    # 读取CSV文件
+    df = pd.read_csv('sample_params_data_2_layer1-6.csv')
+
+    # 将每行数据转换为列表，并存储在一个列表中
+    data_list = df.values.tolist()
+
+    params,accs = [data[:16] for data in data_list],[data[-4] for data in data_list]
+    for param,acc in zip(params, accs):
+        print(param,acc)
+    
+
+
+    surrogate_model_acc = predictor([params, accs])
     # File to save first results
     out_file = 'gbm_trials.csv'
     of_connection = open(out_file, 'w')
