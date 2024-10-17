@@ -39,6 +39,8 @@ def train(student_model, teacher_model, map_function, train_dataloader, eval_dat
     logger.info("***** Running hid  distil training *****")
     # Prepare loss functions
     loss_mse = MSELoss()
+    # print Loss
+    logger.info(loss_function==1)
     def attention_kl_divergence(student_scores, teacher_scores):
         # Compute the softmax probabilities along the last dimension of the tensors
         teacher_probs = torch.nn.functional.softmax(teacher_scores, dim=-1)
@@ -91,7 +93,7 @@ def train(student_model, teacher_model, map_function, train_dataloader, eval_dat
                 teacher_att = torch.where(teacher_att <= -1e2, torch.zeros_like(teacher_att).to(device),
                                           teacher_att)
 
-                if loss_function == "kl":
+                if loss_function == 1:
                     tmp_loss = attention_kl_divergence(student_att, teacher_att)
                 else:
                     tmp_loss = loss_mse(student_att, teacher_att)
