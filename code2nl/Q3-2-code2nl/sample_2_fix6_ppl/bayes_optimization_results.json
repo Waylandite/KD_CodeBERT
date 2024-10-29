@@ -1,0 +1,21 @@
+{
+    "best_hyperparameters": {
+        "hid_epoches": 10000.0,
+        "hidden_layers": 6,
+        "learning_rate": 0.0001538137249098303,
+        "loss_function": 2,
+        "mapfunction_1": 6.0,
+        "mapfunction_10": 10.0,
+        "mapfunction_11": 8.0,
+        "mapfunction_12": 8.0,
+        "mapfunction_2": 0,
+        "mapfunction_3": 0,
+        "mapfunction_4": 0,
+        "mapfunction_5": 0,
+        "mapfunction_6": 0,
+        "mapfunction_7": 0,
+        "mapfunction_8": 0,
+        "mapfunction_9": 6.0
+    },
+    "best_loss": 22.664088329154694
+}
