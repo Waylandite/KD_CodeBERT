@@ -21,10 +21,13 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
                     datefmt="%m/%d/%Y %H:%M:%S",
                     level=logging.INFO)
-# 判断是否存在学习冲突问题
+# 判断是否存在学习冲突问题和注意力头数问题
 def check_params(sampled_params):
+    if sampled_params['num_hidden_layers']%sampled_params['num_attention_heads'] !=0:
+        return False
+
     mapfunction = []
-    for i in range(1, int(sampled_params['hidden_layers']) + 1):  # 筛选有效的mapfunction
+    for i in range(1, int(sampled_params['num_hidden_layers']) + 1):  # 筛选有效的mapfunction
         key = f'mapfunction_{i}'
         if key in sampled_params:
             mapfunction.append(int(sampled_params[key]))
@@ -47,7 +50,8 @@ def sample_params(args,space):
         return 0
 
     hyperparameters=[]
-    while len(hyperparameters) < 20:
+    sample_num=20
+    while len(hyperparameters) < sample_num:
         best = fmin(
             fn=objective,
             space=space,
@@ -60,15 +64,15 @@ def sample_params(args,space):
             print(sampled_params)
             hyperparameters.append(sampled_params)
     # 蒸馏过程
-    accs, f1s, pres, recs = distill(args, hyperparameters, eval=False, surrogate=False)
-    # accs = [round(random.uniform(0.5, 0.6), 2) for _ in range(20)]
-    # f1s = [round(random.uniform(0.5, 0.6), 2) for _ in range(20)]
-    # pres = [round(random.uniform(0.5, 0.6), 2) for _ in range(20)]
-    # recs = [round(random.uniform(0.5, 0.6), 2) for _ in range(20)]
+    # accs, f1s, pres, recs = distill(args, hyperparameters, eval=False, surrogate=False)
+    accs = [round(random.uniform(0.5, 0.6), 2) for _ in range(sample_num)]
+    f1s = [round(random.uniform(0.5, 0.6), 2) for _ in range(sample_num)]
+    pres = [round(random.uniform(0.5, 0.6), 2) for _ in range(sample_num)]
+    recs = [round(random.uniform(0.5, 0.6), 2) for _ in range(sample_num)]
 
     with open("sample_params_data.csv", "w") as f:
         writer = csv.writer(f)
-        writer.writerow(["learning_rate","hid_epoches","loss_function","hidden_layers",'mapfunction_1','mapfunction_2','mapfunction_3','mapfunction_4','mapfunction_5','mapfunction_6','mapfunction_7','mapfunction_8','mapfunction_9','mapfunction_10','mapfunction_11','mapfunction_12',"Accuracy", "F1", "Precision", "Recall"])
+        writer.writerow(["Tokenizer", "Vocab Size", "Num Hidden Layers", "Hidden Size", "Hidden Act", "Hidden Dropout Prob", "Intermediate Size", "Num Attention Heads", "Attention Probs Dropout Prob", "Max Sequence Length", "Position Embedding Type", "Pred Learning Rate", "Batch Size","Loss Function","Hid Learning Rate","Hid Epoches",'mapfunction_1','mapfunction_2','mapfunction_3','mapfunction_4','mapfunction_5','mapfunction_6','mapfunction_7','mapfunction_8','mapfunction_9','mapfunction_10','mapfunction_11','mapfunction_12',"Accuracy", "F1", "Precision", "Recall"])
         for d, acc,f1,pre,rec in zip(hyperparameters, accs, f1s, pres, recs):
             writer.writerow(Hyperparameters_convert(d) + [acc] + [f1] + [pre] + [rec])
     return hyperparameters,accs
@@ -81,8 +85,8 @@ def objective(hyperparameters):
     if not check_params(hyperparameters):
         return {'loss': 1, 'status': 'fail', 'params': hyperparameters}
     start_time = time.time()
-
-    accs = surrogate_model_acc.predict([Hyperparameters_convert(hyperparameters)])[0]
+    print(list(hyperparameters.values()))
+    accs = surrogate_model_acc.predict([list(hyperparameters.values())])[0]
     object_loss = 1 - accs
 
     # 记录本次迭代的结果
@@ -152,18 +156,25 @@ if __name__ == "__main__":
 
 
 
-    # Define the search space
-    # parm1 learning_rate 中间层蒸馏阶段学习率
-    # parm2 hid_epoches 隐藏层蒸馏迭代次数
-    # loss_function  蒸馏损失函数  1代表kl   2代表mse(bayes优化器很难编码字符串，所以这里用数字代替)
-    # parm3 hidden_layers 隐藏层堆叠数
-    # parm-else mapfunction_1-12 映射函数  0 means no learning
     space = {
-        'learning_rate': hp.loguniform('learning_rate', np.log(0.00005), np.log(0.001)),
+        # old config 
+        'tokenizer': hp.choice('tokenizer',[1,2,3,4]),#  "Byte-Pair Encoding", "WordPiece", "Unigram", "Word"
+        'vocab_size': hp.quniform('vocab_size', 1000, 46000, 1000),
+        'num_hidden_layers': hp.quniform('num_hidden_layers', 1, 12, 1),
+        'hidden_size': hp.quniform('hidden_size', 16, 256, 1),
+        'hidden_act': hp.choice('hidden_act',[1,2,3,4]), #"GELU", "ReLU", "SiLU", "GELU_new"
+        'hidden_dropout_prob': hp.choice('hidden_dropout_prob',[0.1, 0.2, 0.3, 0.4, 0.5]),
+        'intermediate_size': hp.quniform('intermediate_size', 32, 3072, 1),
+        'num_attention_heads': hp.quniform('num_attention_heads', 1, 12, 1),
+        'attention_probs_dropout_prob': hp.choice('attention_probs_dropout_prob',[0.1, 0.2, 0.3, 0.4, 0.5]),
+        'max_sequence_length': hp.quniform('max_sequence_length', 256, 512, 1),
+        'position_embedding_type': hp.choice('position_embedding_type',[1,2,3]),  #"absolute", "relative_key",  "relative_key_query"
+        'pred_learning_rate': hp.choice('pred_learning_rate',[1e-3, 1e-4, 5e-5]),    
+        'batch_size': hp.choice('batch_size',[16,32,64]),
+        # new config 
+        'loss_function': hp.choice('loss_function',[1, 2]),  # kl mse
+        'hid_learning_rate': hp.choice('hid_learning_rate',[1e-3, 1e-4, 5e-5]),      
         'hid_epoches': hp.quniform('hid_epoches', 4, 13, 1),
-        'loss_function': hp.choice('loss_function',[1, 2]),
-        # 'hidden_layers': hp.choice('hidden_layers',[6]),
-        'hidden_layers': hp.quniform('hidden_layers', 1, 6, 1),
         'mapfunction_1': hp.choice('mapfunction_1', [0, hp.quniform('mapfunction_1_opt', 1, 12, 1)]),
         'mapfunction_2': hp.choice('mapfunction_2', [0, hp.quniform('mapfunction_2_opt', 1, 12, 1)]),
         'mapfunction_3': hp.choice('mapfunction_3', [0, hp.quniform('mapfunction_3_opt', 1, 12, 1)]),
@@ -179,18 +190,18 @@ if __name__ == "__main__":
     }
 
 
-    # params,accs=sample_params(args,space)
-    # params=[Hyperparameters_convert(p) for p in params]
+    params,accs=sample_params(args,space)
+    params= [list(d.values()) for d in params]
     # if exist params and accs, then use them to train surrogate model
     # 读取CSV文件
-    df = pd.read_csv('sample_params_data_2_layer1-6.csv')
+    # df = pd.read_csv('sample_params_data_2_layer1-6.csv')
 
     # 将每行数据转换为列表，并存储在一个列表中
-    data_list = df.values.tolist()
+    # data_list = df.values.tolist()
 
-    params,accs = [data[:16] for data in data_list],[data[-4] for data in data_list]
-    for param,acc in zip(params, accs):
-        print(param,acc)
+    # params,accs = [data[:16] for data in data_list],[data[-4] for data in data_list]
+    # for param,acc in zip(params, accs):
+    #     print(param,acc)
     
 
 

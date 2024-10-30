@@ -7,13 +7,13 @@ import numpy as np
 import torch.nn.functional as F
 from torch.nn import MSELoss
 from tqdm import tqdm
-from utils import distill_loss, TextDataset, set_seed
+from utils import Hyperparameters_convert, distill_loss, TextDataset, set_seed
 from models import Model
 from sklearn.metrics import recall_score, precision_score, f1_score
 from torch.utils.data import DataLoader, SequentialSampler, RandomSampler
 from transformers import AdamW, get_linear_schedule_with_warmup, RobertaConfig, RobertaModel, \
     RobertaForSequenceClassification, RobertaTokenizer
-
+import argparse
 warnings.filterwarnings("ignore")
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(name)s - %(message)s", datefmt="%m/%d/%Y %H:%M:%S",
                     level=logging.INFO)
@@ -90,11 +90,13 @@ def train(student_model, teacher_model, map_function, train_dataloader, eval_dat
                 teacher_att = torch.where(teacher_att <= -1e2, torch.zeros_like(teacher_att).to(device),
                                           teacher_att)
 
-                if loss_function == 1:  
+                if loss_function == 'kl':  
                     tmp_loss = attention_kl_divergence(student_att, teacher_att)
-                else:
+                elif loss_function == 'mse':
                     tmp_loss = loss_mse(student_att, teacher_att)
-
+                else:
+                    print("loss function error")
+                    return
                 att_loss += tmp_loss
 
             # important! reps calculate
@@ -277,19 +279,6 @@ def evaluate(model, device, eval_dataloader):
 
 
 def distill(args, hyperparametersList, eval=False, surrogate=False):
-    # prepare the tokenizer
-    tokenizer = RobertaTokenizer.from_pretrained(args.tokenizer)
-    tokenizer.do_lower_case = True
-
-    # 准备训练数据
-    train_dataset = TextDataset(tokenizer, args, file_path=args.train_data_file)
-    train_sampler = RandomSampler(train_dataset)
-    train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
-
-    eval_dataset = TextDataset(tokenizer, args, file_path=args.eval_data_file)
-    eval_sampler = SequentialSampler(eval_dataset)
-    eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size, num_workers=8,
-                                 pin_memory=True)
 
     set_seed(args.seed)
     # teacher model
@@ -297,7 +286,7 @@ def distill(args, hyperparametersList, eval=False, surrogate=False):
     teacher_config.num_labels = 2
     teacher_model = Model(RobertaForSequenceClassification.from_pretrained(args.teacher_model, config=teacher_config))
     teacher_model.to(args.device)
-    # 装配学生参数
+    # student model 
     student_config = RobertaConfig.from_pretrained(args.student_model)
     student_config.num_labels = 2
 
@@ -308,10 +297,38 @@ def distill(args, hyperparametersList, eval=False, surrogate=False):
 
     for hyperparam in hyperparametersList:
         
-        student_config.num_hidden_layers = int(hyperparam['hidden_layers'])
+        tokenizer_type, vocab_size, num_hidden_layers, hidden_size, hidden_act, hidden_dropout_prob, intermediate_size, num_attention_heads, attention_probs_dropout_prob, max_sequence_length, position_embedding_type, pred_learning_rate, batch_size,loss_function,hid_learning_rate,hid_epoches,*rest = Hyperparameters_convert(hyperparam)
+            
+        student_config.vocab_size = vocab_size
+        student_config.num_hidden_layers = num_hidden_layers
+        student_config.hidden_size = hidden_size
+        student_config.hidden_act = hidden_act
+        student_config.hidden_dropout_prob = hidden_dropout_prob
+        student_config.intermediate_size = intermediate_size
+        student_config.num_attention_heads = num_attention_heads
+        student_config.attention_probs_dropout_prob = attention_probs_dropout_prob
+        student_config.max_position_embeddings = max_sequence_length+2
+        student_config.position_embedding_type = position_embedding_type
+
+        
+        # prepare the tokenizer
+        tokenizer = RobertaTokenizer.from_pretrained("/home/wuruifeng/data/models/roberta-base")
+        tokenizer.do_lower_case = True
+
+        # 准备训练数据
+        train_dataset = TextDataset(tokenizer, max_sequence_length, file_path=args.train_data_file)
+        train_sampler = RandomSampler(train_dataset)
+        train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=batch_size)
+
+        eval_dataset = TextDataset(tokenizer, max_sequence_length, file_path=args.eval_data_file)
+        eval_sampler = SequentialSampler(eval_dataset)
+        eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size, num_workers=8,
+                                        pin_memory=True)
+        
+        
         # 根据学生模型的层数,选择hyperparam中有效的map_function
         mapfunction = []
-        for i in range(1, int(hyperparam['hidden_layers'])+1):  # 筛选有效的mapfunction
+        for i in range(1, num_hidden_layers+1):  # 筛选有效的mapfunction
             key = f'mapfunction_{i}'
             if key in hyperparam:
                 mapfunction.append(int(hyperparam[key]))
@@ -320,13 +337,14 @@ def distill(args, hyperparametersList, eval=False, surrogate=False):
         student_model.to(args.device)
         print(hyperparam)
         dev_best_outcomes = train(student_model, teacher_model, mapfunction, train_dataloader, eval_dataloader,
-                                  int(hyperparam["hid_epoches"]),
+                                  hid_epoches,
                                   args.pred_epoches,
-                                  hyperparam["learning_rate"],
-                                  args.pred_learning_rate,
+                                  hid_learning_rate,
+                                  pred_learning_rate,
                                   args.temperature,
                                   args.device,
-                                  hyperparam["loss_function"],surrogate=False)
+                                  loss_function,
+                                  surrogate=False)
 
         dev_best_accs.append(dev_best_outcomes["eval_acc"])
         dev_best_f1s.append(dev_best_outcomes["eval_f1"])
@@ -337,10 +355,65 @@ def distill(args, hyperparametersList, eval=False, surrogate=False):
 
 
 if __name__ == "__main__":
-    args = None
-    hyper_args=[{'hid_epoch': 15.0, 'hidden_layers': 2.0, 'learning_rate': 0.00013118966196219196, 'mapfunction_1': 10.0,
-     'mapfunction_10': 2.0, 'mapfunction_11': 11.0, 'mapfunction_12': 9.0, 'mapfunction_2': 6.0, 'mapfunction_3': 7.0,
-     'mapfunction_4': 11.0, 'mapfunction_5': 11.0, 'mapfunction_6': 11.0, 'mapfunction_7': 0.0, 'mapfunction_8': 3.0,
-     'mapfunction_9': 2.0}]
-    dev_best_accs = distill(args, hyper_args,  eval=False, surrogate=True)
-    print(dev_best_accs)
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--student_model",
+                        default="/home/wuruifeng/data/models/6layer_config",
+                        type=str,
+                        required=False,
+                        help="The student model dir.")
+    parser.add_argument("--teacher_model",
+                        default="/home/wuruifeng/data/result/Vulnerability-Detection/Finetune",
+                        type=str,
+                        required=False,
+                        help="The teacher model dir.")
+    parser.add_argument("--train_data_file", default="/home/wuruifeng/data/data/Vulnerability-Detection/data/label_train.jsonl", type=str, required=False,
+                        help="The input training data file (a text file).")
+    parser.add_argument("--eval_data_file", default="/home/wuruifeng/data/data/Vulnerability-Detection/data/valid.jsonl", type=str,
+                        help="An optional input evaluation data file to evaluate the perplexity on (a text file).")
+    parser.add_argument("--eval_batch_size", default=64, type=int,
+                        help="Batch size per GPU/CPU for evaluation.")
+    parser.add_argument("--pred_epoches", type=int, default=4,
+                        help="epoch num for pred training")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="random seed for initialization")
+    parser.add_argument('--temperature',
+                        type=float,
+                        default=1.)
+    parser.add_argument('--iteration',
+                        type=int,
+                        default=500)
+    # prepare the device
+    args = parser.parse_args()
+    logger.info(args)
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # CUDA_VISIBLE_DEVICES 表当前可被python程序检测到的显卡
+
+    args.device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")  # 多GPU时可指定起始位置/编号
+
+    args.device=torch.device("cpu")
+
+    hyper_args=[
+    {
+    'attention_probs_dropout_prob': 0.1, 
+    'batch_size': 32,
+    'hidden_act': 1, 
+    'hidden_dropout_prob': 0.4,
+    'hidden_size': 70.0, 
+    'intermediate_size': 1710.0,
+    'max_sequence_length': 512.0, 
+    'num_attention_heads': 2.0, 
+    'num_hidden_layers': 4.0, 
+    'position_embedding_type': 3, 
+    'pred_learning_rate': 0.001, 
+    'tokenizer': 3, 
+    'vocab_size': 27000.0,
+    
+    'loss_function': 2, 
+    'hid_epoches': 12.0, 
+    'hid_learning_rate': 0.0001,
+    'mapfunction_1': 11.0, 'mapfunction_2': 0, 'mapfunction_3': 0, 'mapfunction_4': 0, 'mapfunction_5': 7.0, 'mapfunction_6': 0, 'mapfunction_7': 8.0, 'mapfunction_8': 0, 'mapfunction_9': 11.0, 'mapfunction_10': 10.0, 'mapfunction_11': 10.0, 'mapfunction_12': 0}
+
+    ]
+
+    accs, f1s, pres, recs = distill(args, hyper_args, eval=False, surrogate=False)
+    print(accs)
