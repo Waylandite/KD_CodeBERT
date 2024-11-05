@@ -9,23 +9,59 @@ from hyperopt import hp, space_eval
 from hyperopt import tpe
 from hyperopt import Trials
 from hyperopt import fmin
+from models import Model
 import csv
 import logging
-from utils import Hyperparameters_convert
+from utils import Hyperparameters_convert, ParametersCSV_convert
 from transformers import RobertaTokenizer
 from surrogate import predictor
-
+from transformers import AdamW, get_linear_schedule_with_warmup, RobertaConfig, RobertaModel, \
+    RobertaForSequenceClassification, RobertaTokenizer
 from distill_utils import distill
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
                     datefmt="%m/%d/%Y %H:%M:%S",
                     level=logging.INFO)
+
+# def check_model_size(sampled_params):
+#     tokenizer_type, vocab_size, num_hidden_layers, hidden_size, hidden_act, hidden_dropout_prob, intermediate_size, num_attention_heads, attention_probs_dropout_prob, max_sequence_length, position_embedding_type, pred_learning_rate, batch_size,loss_function,hid_learning_rate,hid_epoches,*rest = Hyperparameters_convert(sampled_params)
+#     # student model
+#     student_config = RobertaConfig.from_pretrained("/home/wuruifeng/data/models/6layer_config")
+#     student_config.num_labels = 2
+#     # student_config.vocab_size = vocab_size
+#     student_config.num_hidden_layers = num_hidden_layers
+#     student_config.hidden_size = hidden_size
+#     student_config.hidden_act = hidden_act
+#     student_config.hidden_dropout_prob = hidden_dropout_prob
+#     student_config.intermediate_size = intermediate_size
+#     student_config.num_attention_heads = num_attention_heads
+#     student_config.attention_probs_dropout_prob = attention_probs_dropout_prob
+#     student_config.max_position_embeddings = max_sequence_length+2
+#     student_config.position_embedding_type = position_embedding_type
+#     student_model = Model(RobertaForSequenceClassification(student_config))
+#     total_params = sum(p.numel() for p in student_model.parameters())
+#     print(total_params * 4 / 1e6)
+#     return (total_params * 4 / 1e6)<=3
+
+# def check_model_size(sampled_params):
+#     tokenizer_type, vocab_size, num_hidden_layers, hidden_size, hidden_act, hidden_dropout_prob, intermediate_size, num_attention_heads, attention_probs_dropout_prob, max_sequence_length, position_embedding_type, pred_learning_rate, batch_size,loss_function,hid_learning_rate,hid_epoches,*rest = Hyperparameters_convert(sampled_params)
+#     # student model
+#     embedding=4*(vocab_size+max_sequence_length+3)*hidden_size
+#     transformerlayer=4*(4*hidden_size**hidden_size+(9+2*intermediate_size)*hidden_size+intermediate_size)*num_hidden_layers
+#     classiter=2*hidden_size**hidden_size+4*hidden_size+2
+#
+#
+#     total_params =embedding+transformerlayer+classiter
+#     print(total_params / 1e6)
+#     return (total_params / 1e6)<=3
+
 # 判断是否存在学习冲突问题和注意力头数问题
 def check_params(sampled_params):
-    if sampled_params['num_hidden_layers']%sampled_params['num_attention_heads'] !=0:
+    if sampled_params['hidden_size']%sampled_params['num_attention_heads'] !=0:
         return False
-
+    # if not check_model_size(sampled_params):
+    #     return False
     mapfunction = []
     for i in range(1, int(sampled_params['num_hidden_layers']) + 1):  # 筛选有效的mapfunction
         key = f'mapfunction_{i}'
@@ -44,7 +80,7 @@ def check_params(sampled_params):
         return False
 
 # 随机采样20个配置，进行蒸馏过程，输出过程数据
-def sample_params(args,space):
+def sample_params(args,space,hid_distil):
     # 定义一个伪目标函数
     def objective(params):
         return 0
@@ -64,11 +100,11 @@ def sample_params(args,space):
             print(sampled_params)
             hyperparameters.append(sampled_params)
     # 蒸馏过程
-    # accs, f1s, pres, recs = distill(args, hyperparameters, eval=False, surrogate=False)
-    accs = [round(random.uniform(0.5, 0.6), 2) for _ in range(sample_num)]
-    f1s = [round(random.uniform(0.5, 0.6), 2) for _ in range(sample_num)]
-    pres = [round(random.uniform(0.5, 0.6), 2) for _ in range(sample_num)]
-    recs = [round(random.uniform(0.5, 0.6), 2) for _ in range(sample_num)]
+    accs, f1s, pres, recs = distill(args, hyperparameters,hid_distil, eval=False, surrogate=False)
+    # accs = [round(random.uniform(0.5, 0.6), 2) for _ in range(sample_num)]
+    # f1s = [round(random.uniform(0.5, 0.6), 2) for _ in range(sample_num)]
+    # pres = [round(random.uniform(0.5, 0.6), 2) for _ in range(sample_num)]
+    # recs = [round(random.uniform(0.5, 0.6), 2) for _ in range(sample_num)]
 
     with open("sample_params_data.csv", "w") as f:
         writer = csv.writer(f)
@@ -152,28 +188,29 @@ if __name__ == "__main__":
     # prepare the device
     args = parser.parse_args()
     logger.info(args)
-    args.device = torch.device("cuda")
+    args.device = torch.device("cuda:0")
 
 
 
     space = {
-        # old config 
-        'tokenizer': hp.choice('tokenizer',[1,2,3,4]),#  "Byte-Pair Encoding", "WordPiece", "Unigram", "Word"
-        'vocab_size': hp.quniform('vocab_size', 1000, 46000, 1000),
+        # old config
+        'tokenizer': hp.choice('tokenizer',[5]),#  fixed
+        'vocab_size': hp.choice('vocab_size', [50265]),#  fixed
+        # 'vocab_size': hp.quniform('vocab_size', 1000, 46000, 1000),
         'num_hidden_layers': hp.quniform('num_hidden_layers', 1, 12, 1),
-        'hidden_size': hp.quniform('hidden_size', 16, 256, 1),
-        'hidden_act': hp.choice('hidden_act',[1,2,3,4]), #"GELU", "ReLU", "SiLU", "GELU_new"
+        'hidden_size': hp.quniform('hidden_size', 16, 256, 16),
+        'hidden_act': hp.choice('hidden_act',[1,2,3,4]),
         'hidden_dropout_prob': hp.choice('hidden_dropout_prob',[0.1, 0.2, 0.3, 0.4, 0.5]),
-        'intermediate_size': hp.quniform('intermediate_size', 32, 3072, 1),
-        'num_attention_heads': hp.quniform('num_attention_heads', 1, 12, 1),
+        'intermediate_size': hp.quniform('intermediate_size', 32, 3072, 32),
+        'num_attention_heads': hp.choice('num_attention_heads',[12]),#  fixed
         'attention_probs_dropout_prob': hp.choice('attention_probs_dropout_prob',[0.1, 0.2, 0.3, 0.4, 0.5]),
         'max_sequence_length': hp.quniform('max_sequence_length', 256, 512, 1),
-        'position_embedding_type': hp.choice('position_embedding_type',[1,2,3]),  #"absolute", "relative_key",  "relative_key_query"
-        'pred_learning_rate': hp.choice('pred_learning_rate',[1e-3, 1e-4, 5e-5]),    
-        'batch_size': hp.choice('batch_size',[16,32,64]),
-        # new config 
-        'loss_function': hp.choice('loss_function',[1, 2]),  # kl mse
-        'hid_learning_rate': hp.choice('hid_learning_rate',[1e-3, 1e-4, 5e-5]),      
+        'position_embedding_type': hp.choice('position_embedding_type',[1,2,3]),
+        'pred_learning_rate': hp.choice('pred_learning_rate',[1e-3, 1e-4, 5e-5]),
+        'batch_size': hp.choice('batch_size',[8,16]),
+        # new config
+        'loss_function': hp.choice('loss_function',[1, 2]),
+        'hid_learning_rate': hp.choice('hid_learning_rate',[1e-3, 1e-4, 5e-5]),
         'hid_epoches': hp.quniform('hid_epoches', 4, 13, 1),
         'mapfunction_1': hp.choice('mapfunction_1', [0, hp.quniform('mapfunction_1_opt', 1, 12, 1)]),
         'mapfunction_2': hp.choice('mapfunction_2', [0, hp.quniform('mapfunction_2_opt', 1, 12, 1)]),
@@ -190,19 +227,57 @@ if __name__ == "__main__":
     }
 
 
-    params,accs=sample_params(args,space)
-    params= [list(d.values()) for d in params]
-    # if exist params and accs, then use them to train surrogate model
-    # 读取CSV文件
-    # df = pd.read_csv('sample_params_data_2_layer1-6.csv')
+    # old_space = {
+    #     # old config 
+    #     'tokenizer': hp.choice('tokenizer',[1,2,3,4]),#  "Byte-Pair Encoding", "WordPiece", "Unigram", "Word"
+    #     # 'tokenizer': hp.choice('tokenizer',[5]),#fixed
+    #     'vocab_size': hp.quniform('vocab_size', 1000, 46000, 1000),
+    #     # 'vocab_size': hp.choice('vocab_size', [50265]),#  fixed
+    #     'num_hidden_layers': hp.quniform('num_hidden_layers', 1, 12, 1),
+    #     'hidden_size': hp.quniform('hidden_size', 16, 256, 16),
+    #     'hidden_act': hp.choice('hidden_act',[1,2,3,4]), #"GELU", "ReLU", "SiLU", "GELU_new"
+    #     'hidden_dropout_prob': hp.choice('hidden_dropout_prob',[0.1, 0.2, 0.3, 0.4, 0.5]),
+    #     'intermediate_size': hp.quniform('intermediate_size', 32, 3072, 32),
+    #     'num_attention_heads': hp.quniform('num_attention_heads', 1, 12, 1),
+    #     # 'num_attention_heads': hp.choice('num_attention_heads',[12]),#  fixed
+    #     'attention_probs_dropout_prob': hp.choice('attention_probs_dropout_prob',[0.1, 0.2, 0.3, 0.4, 0.5]),
+    #     'max_sequence_length': hp.quniform('max_sequence_length', 256, 512, 1),
+    #     'position_embedding_type': hp.choice('position_embedding_type',[1,2,3]),  #"absolute", "relative_key",  "relative_key_query"
+    #     'pred_learning_rate': hp.choice('pred_learning_rate',[1e-3, 1e-4, 5e-5]),    
+    #     'batch_size': hp.choice('batch_size',[8,16]),
+    #     # new config 
+    #     'loss_function': hp.choice('loss_function',[0]),
+    #     'hid_learning_rate': hp.choice('hid_learning_rate',[0]),
+    #     'hid_epoches': hp.choice('hid_epoches',[0]),
+    #     'mapfunction_1': hp.choice('mapfunction_1', [1]),
+    #     'mapfunction_2': hp.choice('mapfunction_2', [2]),
+    #     'mapfunction_3': hp.choice('mapfunction_3', [3]),
+    #     'mapfunction_4': hp.choice('mapfunction_4', [4]),
+    #     'mapfunction_5': hp.choice('mapfunction_5', [5]),
+    #     'mapfunction_6': hp.choice('mapfunction_6', [6]),
+    #     'mapfunction_7': hp.choice('mapfunction_7', [7]),
+    #     'mapfunction_8': hp.choice('mapfunction_8', [8]),
+    #     'mapfunction_9': hp.choice('mapfunction_9', [9]),
+    #     'mapfunction_10': hp.choice('mapfunction_10', [10]),
+    #     'mapfunction_11': hp.choice('mapfunction_11', [11]),
+    #     'mapfunction_12': hp.choice('mapfunction_12', [12]),
+    # }
 
-    # 将每行数据转换为列表，并存储在一个列表中
+    params,accs=sample_params(args,space,True)
+    # params, accs = sample_params(args, old_space,False)
+    params= [list(d.values()) for d in params]
+    
+    # # if exist params and accs, then use them to train surrogate model
+    # # 读取CSV文件
+    # df = pd.read_csv('sample_params_data.csv')
+
+    # # 将每行数据转换为列表，并存储在一个列表中
     # data_list = df.values.tolist()
 
-    # params,accs = [data[:16] for data in data_list],[data[-4] for data in data_list]
+    # params,accs = [data[:28] for data in data_list],[data[-4] for data in data_list]
     # for param,acc in zip(params, accs):
     #     print(param,acc)
-    
+    # params = [ParametersCSV_convert(param) for param in params]
 
 
     surrogate_model_acc = predictor([params, accs])
@@ -218,8 +293,9 @@ if __name__ == "__main__":
     bayes_trials = Trials()
 
     # Optimize
-    best = fmin(fn=objective, space=space, algo=tpe.suggest,
-                max_evals=args.iteration, trials=bayes_trials)
+    best = fmin(fn=objective, space=space, algo=tpe.suggest, max_evals=args.iteration, trials=bayes_trials)
+    # best = fmin(fn=objective, space=old_space, algo=tpe.suggest, max_evals=args.iteration, trials=bayes_trials)
+    
     best_params = bayes_trials.best_trial['result']['params']
     best_loss = bayes_trials.best_trial['result']['loss']
     # 将结果写入文件

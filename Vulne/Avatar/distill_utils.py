@@ -7,7 +7,7 @@ import numpy as np
 import torch.nn.functional as F
 from torch.nn import MSELoss
 from tqdm import tqdm
-from utils import Hyperparameters_convert, distill_loss, TextDataset, set_seed
+from utils import old_hyperparams_convert, distill_loss, TextDataset, set_seed
 from models import Model
 from sklearn.metrics import recall_score, precision_score, f1_score
 from torch.utils.data import DataLoader, SequentialSampler, RandomSampler
@@ -279,7 +279,7 @@ def evaluate(model, device, eval_dataloader):
 """
 
 
-def distill(args, hyperparametersList, hid_distil=True,eval=False, surrogate=False):
+def distill(args,hyperparams_set,surrogate=False):
 
     set_seed(args.seed)
     # teacher model
@@ -295,10 +295,13 @@ def distill(args, hyperparametersList, hid_distil=True,eval=False, surrogate=Fal
     dev_best_f1s = []
     dev_best_pres = []
     dev_best_recs = []
+    for hyperparams in hyperparams_set:
+        print(hyperparams)
+        print("******detail hyperparams******")
+        print(old_hyperparams_convert(hyperparams))
+        print("******strat distil******")
+        tokenizer_type, vocab_size, num_hidden_layers, hidden_size, hidden_act, hidden_dropout_prob, intermediate_size, num_attention_heads, attention_probs_dropout_prob, max_sequence_length, position_embedding_type, learning_rate, batch_size = old_hyperparams_convert(hyperparams)
 
-    for hyperparam in hyperparametersList:
-        
-        tokenizer_type, vocab_size, num_hidden_layers, hidden_size, hidden_act, hidden_dropout_prob, intermediate_size, num_attention_heads, attention_probs_dropout_prob, max_sequence_length, position_embedding_type, pred_learning_rate, batch_size,loss_function,hid_learning_rate,hid_epoches,*rest = Hyperparameters_convert(hyperparam)
             
         student_config.vocab_size = vocab_size
         student_config.num_hidden_layers = num_hidden_layers
@@ -326,24 +329,18 @@ def distill(args, hyperparametersList, hid_distil=True,eval=False, surrogate=Fal
         
         # 根据学生模型的层数,选择hyperparam中有效的map_function
         mapfunction = []
-        for i in range(1, num_hidden_layers+1):  # 筛选有效的mapfunction
-            key = f'mapfunction_{i}'
-            if key in hyperparam:
-                mapfunction.append(int(hyperparam[key]))
-
         student_model = Model(RobertaForSequenceClassification(student_config))
         student_model.to(args.device)
-        print(hyperparam)
-        print(mapfunction)
+
         dev_best_outcomes = train(student_model, teacher_model, mapfunction, train_dataloader, eval_dataloader,
-                                  hid_epoches,
+                                  0,
                                   args.pred_epoches,
-                                  hid_learning_rate,
-                                  pred_learning_rate,
+                                  0,
+                                  learning_rate,
                                   args.temperature,
                                   args.device,
-                                  loss_function,
-                                  hid_distil,
+                                  0,
+                                  False,
                                   surrogate=False,
                                   )
 
@@ -422,10 +419,8 @@ if __name__ == "__main__":
         "pred_learning_rate": 0.001,
         "tokenizer": 1,
         "vocab_size": 45000.0
-    }
-
-
-    ]
+}
+]
 
     accs, f1s, pres, recs = distill(args, hyper_args, hid_distil=False,eval=False, surrogate=False)
     print(accs)

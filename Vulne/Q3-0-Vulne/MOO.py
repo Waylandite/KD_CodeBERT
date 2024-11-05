@@ -11,7 +11,7 @@ from transformers import RobertaTokenizer
 
 from distill_utils import distill
 from surrogate import predictor
-from utils import mapFunction_convert
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
                     datefmt="%m/%d/%Y %H:%M:%S",

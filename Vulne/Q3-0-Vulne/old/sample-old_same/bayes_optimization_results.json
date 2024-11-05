@@ -1,0 +1,33 @@
+{
+    "best_hyperparameters": {
+        "attention_probs_dropout_prob": 0.4,
+        "batch_size": 32,
+        "hid_epoches": 0,
+        "hid_learning_rate": 0,
+        "hidden_act": 4,
+        "hidden_dropout_prob": 0.1,
+        "hidden_size": 48.0,
+        "intermediate_size": 1280.0,
+        "loss_function": 0,
+        "mapfunction_1": 1,
+        "mapfunction_10": 10,
+        "mapfunction_11": 11,
+        "mapfunction_12": 12,
+        "mapfunction_2": 2,
+        "mapfunction_3": 3,
+        "mapfunction_4": 4,
+        "mapfunction_5": 5,
+        "mapfunction_6": 6,
+        "mapfunction_7": 7,
+        "mapfunction_8": 8,
+        "mapfunction_9": 9,
+        "max_sequence_length": 388.0,
+        "num_attention_heads": 12,
+        "num_hidden_layers": 8.0,
+        "position_embedding_type": 1,
+        "pred_learning_rate": 0.001,
+        "tokenizer": 5,
+        "vocab_size": 50265
+    },
+    "best_loss": 0.3581742983862435
+}

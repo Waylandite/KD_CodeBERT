@@ -198,7 +198,7 @@ def old_hyperparams_convert(hyperparams):
     hidden_act = {1: "gelu", 2: "relu", 3: "silu", 4: "gelu_new"}
     position_embedding_type = {1: "absolute", 2: "relative_key", 3: "relative_key_query"}
     learning_rate = {1: 1e-3, 2: 1e-4, 3: 5e-5}
-    batch_size = {1: 16, 2: 32, 3: 64}
+    batch_size = {1: 8, 2: 16}
 
     return [
         tokenizer_type[hyperparams[0]],

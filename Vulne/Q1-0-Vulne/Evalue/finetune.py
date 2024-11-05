@@ -163,6 +163,8 @@ def main():
     config = RobertaConfig.from_pretrained(args.pred_model_dir)
     config.num_labels = 2
     model = Model(RobertaForSequenceClassification.from_pretrained(args.pred_model_dir, config=config))
+
+    # model.load_state_dict(torch.load(args.pred_model_dir+"/pytorch_model.bin"), strict=False)
     model.to(args.device)
     params = sum(p.numel() for p in model.parameters())
     logger.info("size %f", params)
